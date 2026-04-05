@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Plaid Link - Connect Bank Account</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; max-width: 600px; margin: 60px auto; padding: 20px; }
+        h1 { color: #333; }
+        button { background: #0066ff; color: white; border: none; padding: 14px 28px; font-size: 16px; border-radius: 8px; cursor: pointer; }
+        button:hover { background: #0052cc; }
+        button:disabled { background: #ccc; cursor: not-allowed; }
+        .status { margin-top: 20px; padding: 12px; border-radius: 6px; }
+        .success { background: #d4edda; color: #155724; }
+        .error { background: #f8d7da; color: #721c24; }
+        .info { background: #d1ecf1; color: #0c5460; }
+    </style>
+</head>
+<body>
+    <h1>Connect Bank Account</h1>
+    <p>Click below to securely connect a bank account via Plaid.</p>
+    <button id="link-btn" onclick="openPlaidLink()">Connect Bank</button>
+    <div id="status"></div>
+
+    <script src="https://cdn.plaid.com/link/v2/stable/link-initialize.js"></script>
+    <script>
+        const linkToken = "{{ link_token }}";
+
+        function openPlaidLink() {
+            const handler = Plaid.create({
+                token: linkToken,
+                onSuccess: async (publicToken, metadata) => {
+                    document.getElementById('status').innerHTML =
+                        '<div class="status info">Exchanging token for ' + metadata.institution.name + '...</div>';
+                    document.getElementById('link-btn').disabled = true;
+
+                    const response = await fetch('/exchange', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({
+                            public_token: publicToken,
+                            institution_id: metadata.institution.institution_id,
+                            institution_name: metadata.institution.name,
+                            accounts: metadata.accounts.map(a => ({
+                                id: a.id,
+                                name: a.name,
+                                type: a.type,
+                                subtype: a.subtype,
+                                mask: a.mask,
+                            })),
+                        }),
+                    });
+                    const data = await response.json();
+                    if (data.success) {
+                        document.getElementById('status').innerHTML =
+                            '<div class="status success">Connected ' + metadata.institution.name +
+                            ' (' + metadata.accounts.length + ' accounts). You can close this page.</div>';
+                    } else {
+                        document.getElementById('status').innerHTML =
+                            '<div class="status error">Error: ' + data.error + '</div>';
+                        document.getElementById('link-btn').disabled = false;
+                    }
+                },
+                onExit: (err) => {
+                    if (err) {
+                        document.getElementById('status').innerHTML =
+                            '<div class="status error">Link exited: ' + err.error_message + '</div>';
+                    }
+                },
+            });
+            handler.open();
+        }
+    </script>
+</body>
+</html>
