@@ -4,10 +4,16 @@ from unittest.mock import MagicMock, patch
 from pathlib import Path
 
 from plaid_mcp.db import init_db, get_db
-from plaid_mcp.sync import sync_transactions
+from plaid_mcp.sync import sync_transactions, sync_balances, sync_liabilities, sync_investments
 from tests.fixtures.plaid_responses import (
     make_transaction,
     make_transactions_sync_response,
+    make_account,
+    make_balance_response,
+    make_liabilities_response,
+    make_credit_liability,
+    make_investment_holding,
+    make_security,
 )
 
 
@@ -159,3 +165,108 @@ class TestSyncTransactions:
         result = sync_transactions(mock_client, "fake-token", "item_1", self.db_path)
         assert result["added"] == 2
         assert mock_client.transactions_sync.call_count == 2
+
+
+class TestSyncBalances:
+    def setup_method(self):
+        import tempfile
+        self._tmp = tempfile.mkdtemp()
+        self.db_path = Path(self._tmp) / "test.db"
+        init_db(self.db_path)
+        seed_institution(self.db_path)
+
+    def test_upserts_account_balances(self):
+        mock_client = MagicMock()
+        mock_client.accounts_balance_get.return_value = make_balance_response(
+            accounts=[
+                make_account(account_id="acc_1", name="Checking", current=5000.0, available=4800.0),
+                make_account(account_id="acc_2", name="Savings", type="depository", subtype="savings", current=20000.0, available=20000.0),
+            ]
+        )
+        sync_balances(mock_client, "fake-token", "item_1", self.db_path)
+        conn = get_db(self.db_path)
+        rows = conn.execute("SELECT * FROM plaid_accounts ORDER BY account_id").fetchall()
+        assert len(rows) == 2
+        assert rows[0]["current_balance"] == 5000.0
+        assert rows[0]["available_balance"] == 4800.0
+        assert rows[1]["current_balance"] == 20000.0
+        conn.close()
+
+    def test_updates_existing_account_balances(self):
+        seed_account(self.db_path, account_id="acc_1")
+        conn = get_db(self.db_path)
+        conn.execute("UPDATE plaid_accounts SET current_balance = 1000.0 WHERE account_id = 'acc_1'")
+        conn.commit()
+        conn.close()
+
+        mock_client = MagicMock()
+        mock_client.accounts_balance_get.return_value = make_balance_response(
+            accounts=[make_account(account_id="acc_1", current=5000.0, available=4800.0)]
+        )
+        sync_balances(mock_client, "fake-token", "item_1", self.db_path)
+        conn = get_db(self.db_path)
+        row = conn.execute("SELECT * FROM plaid_accounts WHERE account_id = 'acc_1'").fetchone()
+        assert row["current_balance"] == 5000.0
+        conn.close()
+
+
+class TestSyncLiabilities:
+    def setup_method(self):
+        import tempfile
+        self._tmp = tempfile.mkdtemp()
+        self.db_path = Path(self._tmp) / "test.db"
+        init_db(self.db_path)
+        seed_institution(self.db_path)
+        seed_account(self.db_path, account_id="acc_credit_1", type="credit", subtype="credit card")
+
+    def test_syncs_credit_card_liabilities(self):
+        mock_client = MagicMock()
+        mock_client.liabilities_get.return_value = make_liabilities_response(
+            credit=[make_credit_liability(
+                account_id="acc_credit_1",
+                next_payment_due_date="2026-04-15",
+                minimum_payment_amount=35.0,
+                last_payment_amount=500.0,
+            )]
+        )
+        sync_liabilities(mock_client, "fake-token", self.db_path)
+        conn = get_db(self.db_path)
+        row = conn.execute("SELECT * FROM plaid_liabilities WHERE account_id = 'acc_credit_1'").fetchone()
+        assert row is not None
+        assert row["next_payment_due_date"] == "2026-04-15"
+        assert row["minimum_payment_amount"] == 35.0
+        assert row["type"] == "credit"
+        conn.close()
+
+
+class TestSyncInvestments:
+    def setup_method(self):
+        import tempfile
+        self._tmp = tempfile.mkdtemp()
+        self.db_path = Path(self._tmp) / "test.db"
+        init_db(self.db_path)
+        seed_institution(self.db_path)
+        seed_account(self.db_path, account_id="acc_invest_1", type="investment", subtype="brokerage")
+
+    def test_syncs_investment_holdings(self):
+        mock_client = MagicMock()
+        mock_client.investments_holdings_get.return_value = {
+            "holdings": [make_investment_holding(
+                account_id="acc_invest_1",
+                security_id="sec_1",
+                quantity=10.0,
+                institution_price=150.0,
+                institution_value=1500.0,
+                cost_basis=1200.0,
+            )],
+            "securities": [make_security(security_id="sec_1", name="Apple Inc", ticker_symbol="AAPL")],
+        }
+        sync_investments(mock_client, "fake-token", self.db_path)
+        conn = get_db(self.db_path)
+        row = conn.execute("SELECT * FROM plaid_investments WHERE account_id = 'acc_invest_1'").fetchone()
+        assert row is not None
+        assert row["ticker"] == "AAPL"
+        assert row["security_name"] == "Apple Inc"
+        assert row["quantity"] == 10.0
+        assert row["value"] == 1500.0
+        conn.close()
