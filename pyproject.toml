@@ -1,0 +1,26 @@
+[project]
+name = "plaid-mcp-server"
+version = "0.1.0"
+description = "MCP server for Plaid financial data"
+requires-python = ">=3.9"
+dependencies = [
+    "plaid-python>=15.0.0",
+    "flask>=3.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.24.0",
+]
+
+[build-system]
+requires = ["setuptools>=75.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
