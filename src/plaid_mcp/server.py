@@ -16,7 +16,7 @@ from plaid_mcp.tools import (
 from plaid_mcp.client import create_plaid_client
 from plaid_mcp.sync import sync_transactions, sync_balances, sync_liabilities, sync_investments
 from plaid_mcp.recurring import detect_recurring
-from plaid_mcp.credentials import get_plaid_credential, list_access_tokens
+from plaid_mcp.keychain import get_plaid_credential, list_access_tokens
 
 # Initialize database tables on import
 init_db()

@@ -149,7 +149,7 @@ def sync_liabilities(client, access_token: str, db_path: Path | None = None) -> 
     count = 0
     liabilities = response["liabilities"]
 
-    for credit in liabilities.get("credit", []):
+    for credit in (liabilities.get("credit") or []):
         apr = None
         if credit.get("aprs"):
             purchase_aprs = [a for a in credit["aprs"] if a.get("apr_type") == "purchase_apr"]
@@ -175,7 +175,7 @@ def sync_liabilities(client, access_token: str, db_path: Path | None = None) -> 
         )
         count += 1
 
-    for mortgage in liabilities.get("mortgage", []):
+    for mortgage in (liabilities.get("mortgage") or []):
         conn.execute(
             """INSERT INTO plaid_liabilities
                (account_id, type, last_payment_amount, last_payment_date,
@@ -197,7 +197,7 @@ def sync_liabilities(client, access_token: str, db_path: Path | None = None) -> 
         )
         count += 1
 
-    for student in liabilities.get("student", []):
+    for student in (liabilities.get("student") or []):
         conn.execute(
             """INSERT INTO plaid_liabilities
                (account_id, type, last_payment_amount, last_payment_date,

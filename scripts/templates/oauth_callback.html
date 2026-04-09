@@ -1,13 +1,9 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Plaid Link - Connect Bank Account</title>
+    <title>Plaid OAuth Callback</title>
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; max-width: 600px; margin: 60px auto; padding: 20px; }
-        h1 { color: #333; }
-        button { background: #0066ff; color: white; border: none; padding: 14px 28px; font-size: 16px; border-radius: 8px; cursor: pointer; }
-        button:hover { background: #0052cc; }
-        button:disabled { background: #ccc; cursor: not-allowed; }
         .status { margin-top: 20px; padding: 12px; border-radius: 6px; }
         .success { background: #d4edda; color: #155724; }
         .error { background: #f8d7da; color: #721c24; }
@@ -15,23 +11,23 @@
     </style>
 </head>
 <body>
-    <h1>Connect Bank Account</h1>
-    <p>Click below to securely connect a bank account via Plaid.</p>
-    <button id="link-btn" onclick="openPlaidLink()">Connect Bank</button>
-    <div id="status"></div>
+    <h1>Completing Connection...</h1>
+    <div id="status"><div class="status info">Finishing OAuth flow...</div></div>
 
     <script src="https://cdn.plaid.com/link/v2/stable/link-initialize.js"></script>
     <script>
-        const linkToken = "{{ link_token }}";
-
-        function openPlaidLink() {
-            localStorage.setItem('plaid_link_token', linkToken);
+        // Retrieve the link token from localStorage (saved before OAuth redirect)
+        const linkToken = localStorage.getItem('plaid_link_token');
+        if (!linkToken) {
+            document.getElementById('status').innerHTML =
+                '<div class="status error">No link token found. Please start over at <a href="/">Connect Bank</a>.</div>';
+        } else {
             const handler = Plaid.create({
                 token: linkToken,
+                receivedRedirectUri: window.location.href,
                 onSuccess: async (publicToken, metadata) => {
                     document.getElementById('status').innerHTML =
                         '<div class="status info">Exchanging token for ' + metadata.institution.name + '...</div>';
-                    document.getElementById('link-btn').disabled = true;
 
                     const response = await fetch('/exchange', {
                         method: 'POST',
@@ -41,44 +37,26 @@
                             institution_id: metadata.institution.institution_id,
                             institution_name: metadata.institution.name,
                             accounts: metadata.accounts.map(a => ({
-                                id: a.id,
-                                name: a.name,
-                                type: a.type,
-                                subtype: a.subtype,
-                                mask: a.mask,
+                                id: a.id, name: a.name, type: a.type,
+                                subtype: a.subtype, mask: a.mask,
                             })),
                         }),
                     });
                     const data = await response.json();
                     if (data.success) {
+                        localStorage.removeItem('plaid_link_token');
                         document.getElementById('status').innerHTML =
                             '<div class="status success">Connected ' + metadata.institution.name +
                             ' (' + metadata.accounts.length + ' accounts). You can close this page.</div>';
                     } else {
                         document.getElementById('status').innerHTML =
                             '<div class="status error">Error: ' + data.error + '</div>';
-                        document.getElementById('link-btn').disabled = false;
                     }
                 },
-                onEvent: (eventName, metadata) => {
-                    console.log('Plaid event:', eventName, JSON.stringify(metadata, null, 2));
-                    if (eventName === 'ERROR') {
-                        document.getElementById('status').innerHTML =
-                            '<div class="status error"><strong>Error:</strong> ' + metadata.error_code +
-                            ' - ' + metadata.error_message +
-                            '<br><small>Type: ' + metadata.error_type +
-                            ' | Request ID: ' + metadata.request_id + '</small></div>';
-                    }
-                },
-                onExit: (err, metadata) => {
+                onExit: (err) => {
                     if (err) {
                         document.getElementById('status').innerHTML =
-                            '<div class="status error"><strong>' + err.error_code + ':</strong> ' +
-                            err.error_message +
-                            '<br><small>Type: ' + err.error_type +
-                            ' | Institution: ' + (metadata.institution ? metadata.institution.name : 'N/A') +
-                            ' | Status: ' + metadata.status +
-                            ' | Request ID: ' + (err.request_id || 'N/A') + '</small></div>';
+                            '<div class="status error">' + err.error_code + ': ' + err.error_message + '</div>';
                     }
                 },
             });

@@ -23,7 +23,7 @@ from plaid.model.products import Products
 from plaid.model.country_code import CountryCode
 
 from plaid_mcp.client import create_plaid_client
-from plaid_mcp.credentials import save_plaid_credential
+from plaid_mcp.keychain import save_plaid_credential
 from plaid_mcp.db import init_db, get_db
 
 app = Flask(__name__, template_folder=str(Path(__file__).parent / "templates"))
@@ -37,7 +37,8 @@ def get_client():
 def index():
     client = get_client()
     request_obj = LinkTokenCreateRequest(
-        products=[Products("transactions"), Products("liabilities"), Products("investments")],
+        products=[Products("transactions")],
+        optional_products=[Products("liabilities")],
         client_name="Plaid MCP Server",
         country_codes=[CountryCode("US")],
         language="en",
@@ -46,6 +47,12 @@ def index():
     response = client.link_token_create(request_obj)
     link_token = response["link_token"]
     return render_template("link.html", link_token=link_token)
+
+
+@app.route("/oauth-callback")
+def oauth_callback():
+    """Handle OAuth redirect from bank. Re-initialize Link with the same token."""
+    return render_template("oauth_callback.html")
 
 
 @app.route("/exchange", methods=["POST"])

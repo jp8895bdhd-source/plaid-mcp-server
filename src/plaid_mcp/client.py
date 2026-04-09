@@ -3,14 +3,14 @@
 import plaid
 from plaid.api import plaid_api
 
-from plaid_mcp.credentials import get_plaid_credential
+from plaid_mcp.keychain import get_plaid_credential
 
 
 def get_environment_host(env_name: str) -> str:
     """Map environment name to Plaid host URL."""
     hosts = {
         "sandbox": plaid.Environment.Sandbox,
-        "development": plaid.Environment.Sandbox,  # Development maps to Sandbox
+        "development": plaid.Environment.Production,
         "production": plaid.Environment.Production,
     }
     return hosts.get(env_name, plaid.Environment.Sandbox)
