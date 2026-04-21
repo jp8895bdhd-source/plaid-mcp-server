@@ -1,0 +1,56 @@
+#!/bin/bash
+# pre-push — enforce Home->Work branch policy
+#
+# Home machine (no marker): pushes anywhere, including main.
+# Work machine (marker present): may only push to work/* branches.
+#                                Pushes to main/master are refused.
+#
+# Marker: ~/.klause-work-machine (touched once on the work Mac during setup)
+# Enable: git config core.hooksPath .githooks  (per-repo, one-time)
+
+set -eu
+
+# Home machine: no marker, allow everything.
+[ -f "$HOME/.klause-work-machine" ] || exit 0
+
+# Work machine: inspect each ref being pushed.
+blocked=0
+while read -r _local_ref _local_sha remote_ref _remote_sha; do
+  case "$remote_ref" in
+    refs/heads/main|refs/heads/master)
+      blocked=1
+      ;;
+  esac
+done
+
+if [ "$blocked" -eq 1 ]; then
+  today="$(date +%Y-%m-%d)"
+  cat >&2 <<EOF
+
+========================================================================
+  BLOCKED: work machine cannot push to main.
+========================================================================
+
+Per the Home->Work branch policy, the work Mac pushes to work/YYYY-MM-DD
+branches only. Home reviews those branches and merges into main.
+
+To fix, put your commits on today's work branch:
+
+  git checkout -B work/${today} origin/main
+  git cherry-pick <your-commit-shas>     # if you already committed on main
+  git push -u origin work/${today}
+
+Or simpler, use the sync script (it handles all of this):
+
+  ./scripts/sync.sh push
+
+To disable this guard (emergency only), delete ~/.klause-work-machine
+on this Mac. Do not delete it unless you know what you're doing.
+
+========================================================================
+
+EOF
+  exit 1
+fi
+
+exit 0
